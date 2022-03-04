@@ -1,0 +1,19 @@
+type RequestConstUser struct {}
+
+type ResponseConstUser {
+	Num int `json:"num"`
+}
+
+type RequestMultiUser struct {}
+
+type ResponseMultiUser {
+	Num int `json:"num"`
+}
+
+service test-api {
+	@handler TestConstUserHandler
+	get /api/test/getnum1(RequestConstUser) returns (ResponseConstUser)
+	
+	@handler TestMultiUserHandler
+	get /api/test/getnum2(RequestMultiUser) returns (ResponseMultiUser)
+}

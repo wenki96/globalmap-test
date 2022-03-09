@@ -10,10 +10,19 @@ type ResponseMultiUser {
 	Num int `json:"num"`
 }
 
+type RequestSendTx struct {}
+
+type ResponseSendTx {
+	Num int `json:"num"`
+}
+
 service test-api {
 	@handler TestConstUserHandler
 	get /api/test/getnum1(RequestConstUser) returns (ResponseConstUser)
 	
 	@handler TestMultiUserHandler
 	get /api/test/getnum2(RequestMultiUser) returns (ResponseMultiUser)
+	
+	@handler TestSendTxHandler
+	get /api/test/sendtx(RequestSendTx) returns (ResponseSendTx)
 }

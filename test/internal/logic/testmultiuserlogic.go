@@ -77,14 +77,14 @@ func (l *TestMultiUserLogic) TestMultiUser(req types.RequestMultiUser) (resp *ty
 	lockArray := make([]*concurrency.Mutex, 0)
 
 	var Users []string
-	nums := generateRandomNumber(1, 100, 3)
+	nums := generateRandomNumber(1, 100, 2)
 	for _, n := range nums {
 		Users = append(Users, strconv.Itoa(n))
 		// fmt.Println(n)
 	}
 	//Users := []string{"1", "2", "3"}
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		keyLock := etcd.PrefixMapLock + Users[i]
 		lockAsset := concurrency.NewMutex(s, keyLock)
 		if err := lockAsset.TryLock(ctx); err != nil {
@@ -97,7 +97,7 @@ func (l *TestMultiUserLogic) TestMultiUser(req types.RequestMultiUser) (resp *ty
 		lockArray = append([]*concurrency.Mutex{lockAsset}, lockArray...)
 	}
 
-	// time.Sleep(200 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	for _, lock := range lockArray {
 		lock.Unlock(ctx)

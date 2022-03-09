@@ -8,8 +8,9 @@ var (
 )
 
 var (
-	PrefixMapKey  = "/globalmap/"
-	PrefixMapLock = "/lock-globalmap/"
+	PrefixMapKey    = "/globalmap/"
+	PrefixMapLock   = "/lock-globalmap/"
+	PrefixResetLock = "/reset-test/"
 )
 
 var RefusedByLockError = errors.New("refused by lock")

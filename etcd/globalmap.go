@@ -9,12 +9,12 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
-func resetKeyUsed(cli *clientv3.Client) bool {
+func ResetKeyUsed(cli *clientv3.Client) bool {
 	var getResp *clientv3.GetResponse
 	// 实例化一个用于操作ETCD的KV
 	kv := clientv3.NewKV(cli)
 
-	getResp, err := kv.Get(context.TODO(), PrefixLock)
+	getResp, err := kv.Get(context.TODO(), PrefixResetLock)
 	if err != nil {
 		fmt.Println(err)
 		return true
@@ -36,11 +36,6 @@ func GetGlobalMap(key string) (value string, err error) {
 	}
 	defer cli.Close()
 
-	// reseting
-	if resetKeyUsed(cli) {
-		return "", RefusedByLockError
-	}
-
 	// create a sessions to aqcuire a lock
 	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
 	if err != nil {
@@ -50,20 +45,12 @@ func GetGlobalMap(key string) (value string, err error) {
 
 	ctx := context.Background()
 
-	keyLock := "/lock" + key
+	keyLock := PrefixLock + key
 	l := concurrency.NewMutex(s, keyLock)
 
 	// acquire lock (or wait to have it)
 	if err := l.Lock(ctx); err != nil {
 		return "", err
-	}
-
-	// reseting
-	if resetKeyUsed(cli) {
-		if err := l.Unlock(ctx); err != nil {
-			return "", err
-		}
-		return "", RefusedByLockError
 	}
 
 	fmt.Println("[Get] acquired lock for get ", keyLock)
@@ -99,11 +86,6 @@ func UpdateGlobalMap(key, value string) (err error) {
 	}
 	defer cli.Close()
 
-	// reseting
-	if resetKeyUsed(cli) {
-		return RefusedByLockError
-	}
-
 	// create a sessions to aqcuire a lock
 	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
 	if err != nil {
@@ -113,20 +95,12 @@ func UpdateGlobalMap(key, value string) (err error) {
 
 	ctx := context.Background()
 
-	keyLock := "/lock" + key
+	keyLock := PrefixLock + key
 	l := concurrency.NewMutex(s, keyLock)
 
 	// acquire lock (or wait to have it)
 	if err := l.Lock(ctx); err != nil {
 		return err
-	}
-
-	// reseting
-	if resetKeyUsed(cli) {
-		if err := l.Unlock(ctx); err != nil {
-			return err
-		}
-		return RefusedByLockError
 	}
 
 	fmt.Println("[Update] acquired lock for update ", keyLock)
@@ -163,11 +137,6 @@ func DeleteGlobalMap(key string) (err error) {
 	}
 	defer cli.Close()
 
-	// reseting
-	if resetKeyUsed(cli) {
-		return RefusedByLockError
-	}
-
 	// create a sessions to aqcuire a lock
 	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
 	if err != nil {
@@ -177,20 +146,12 @@ func DeleteGlobalMap(key string) (err error) {
 
 	ctx := context.Background()
 
-	keyLock := "/lock" + key
+	keyLock := PrefixLock + key
 	l := concurrency.NewMutex(s, keyLock)
 
 	// acquire lock (or wait to have it)
 	if err := l.Lock(ctx); err != nil {
 		return err
-	}
-
-	// reseting
-	if resetKeyUsed(cli) {
-		if err := l.Unlock(ctx); err != nil {
-			return err
-		}
-		return RefusedByLockError
 	}
 
 	fmt.Println("[Delete] acquired lock for delete ", keyLock)
@@ -220,7 +181,7 @@ func DeleteGlobalMap(key string) (err error) {
 
 func setResetKey(cli *clientv3.Client, key string) {
 	kv := clientv3.NewKV(cli)
-	if _, err := kv.Put(context.TODO(), PrefixKey, key, clientv3.WithPrevKV()); err != nil {
+	if _, err := kv.Put(context.TODO(), PrefixResetLock, key, clientv3.WithPrevKV()); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -232,9 +193,34 @@ func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
 		log.Fatal(err)
 	}
 	defer cli.Close()
+	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+
+	lockArray := make([]*concurrency.Mutex, 0)
 
 	// acquire lock (or wait to have it)
 	setResetKey(cli, "1")
+
+	gresp, err := cli.Get(context.TODO(), PrefixKey, clientv3.WithPrefix())
+	if err != nil {
+		return err
+	} else {
+		for _, kv := range gresp.Kvs {
+			mtx := concurrency.NewMutex(s, string(kv.Key))
+
+			// acquire lock
+			if err := mtx.Lock(ctx); err != nil {
+				return err
+			}
+
+			lockArray = append([]*concurrency.Mutex{mtx}, lockArray...)
+		}
+	}
 
 	fmt.Println("[Reset] acquired lock for reset ", prefixKeyLock)
 
@@ -247,6 +233,10 @@ func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
 		for _, preKv := range res.PrevKvs {
 			fmt.Printf("[Reset] del key: %s, value: %s\n", preKv.Key, preKv.Value)
 		}
+	}
+
+	for _, mtx := range lockArray {
+		mtx.Unlock(ctx)
 	}
 
 	setResetKey(cli, "0")

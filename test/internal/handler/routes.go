@@ -22,6 +22,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/api/test/getnum2",
 				Handler: TestMultiUserHandler(serverCtx),
 			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/test/sendtx",
+				Handler: TestSendTxHandler(serverCtx),
+			},
 		},
 	)
 }

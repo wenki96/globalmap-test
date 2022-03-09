@@ -14,3 +14,10 @@ type RequestMultiUser struct {
 type ResponseMultiUser struct {
 	Num int `json:"num"`
 }
+
+type RequestSendTx struct {
+}
+
+type ResponseSendTx struct {
+	Num int `json:"num"`
+}

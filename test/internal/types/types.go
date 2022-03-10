@@ -21,3 +21,9 @@ type RequestSendTx struct {
 type ResponseSendTx struct {
 	Num int `json:"num"`
 }
+
+type RequestReset struct {
+}
+
+type ResponseReset struct {
+}

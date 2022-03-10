@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"main/etcd"
 	"main/test/internal/svc"
@@ -63,6 +64,8 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 		return &types.ResponseSendTx{}, err
 	}
 	defer mtx.Unlock(ctx)
+
+	time.Sleep(200 * time.Millisecond)
 
 	return &types.ResponseSendTx{
 		Num: 100,

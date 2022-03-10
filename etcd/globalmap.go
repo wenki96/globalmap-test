@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
@@ -14,7 +15,7 @@ func ResetKeyUsed(cli *clientv3.Client) bool {
 	// 实例化一个用于操作ETCD的KV
 	kv := clientv3.NewKV(cli)
 
-	getResp, err := kv.Get(context.TODO(), PrefixResetLock)
+	getResp, err := kv.Get(context.TODO(), PrefixLock)
 	if err != nil {
 		fmt.Println(err)
 		return true
@@ -181,13 +182,13 @@ func DeleteGlobalMap(key string) (err error) {
 
 func setResetKey(cli *clientv3.Client, key string) {
 	kv := clientv3.NewKV(cli)
-	if _, err := kv.Put(context.TODO(), PrefixResetLock, key, clientv3.WithPrevKV()); err != nil {
+	if _, err := kv.Put(context.TODO(), PrefixLock, key, clientv3.WithPrevKV()); err != nil {
 		fmt.Println(err)
 		return
 	}
 }
 
-func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
+func ResetGlobalMap() (err error) {
 	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
 	if err != nil {
 		log.Fatal(err)
@@ -206,12 +207,14 @@ func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
 	// acquire lock (or wait to have it)
 	setResetKey(cli, "1")
 
-	gresp, err := cli.Get(context.TODO(), PrefixKey, clientv3.WithPrefix())
+	gresp, err := cli.Get(ctx, PrefixResetLock, clientv3.WithPrefix())
 	if err != nil {
 		return err
 	} else {
 		for _, kv := range gresp.Kvs {
 			mtx := concurrency.NewMutex(s, string(kv.Key))
+
+			fmt.Println("++++++++++++++", string(kv.Key))
 
 			// acquire lock
 			if err := mtx.Lock(ctx); err != nil {
@@ -222,10 +225,10 @@ func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
 		}
 	}
 
-	fmt.Println("[Reset] acquired lock for reset ", prefixKeyLock)
+	time.Sleep(1 * time.Second)
 
 	kv := clientv3.NewKV(cli)
-	res, err := kv.Delete(context.TODO(), prefixKey, clientv3.WithPrevKV(), clientv3.WithPrefix())
+	res, err := kv.Delete(context.TODO(), PrefixKey, clientv3.WithPrevKV(), clientv3.WithPrefix())
 	if err != nil {
 		return err
 	} else {
@@ -240,9 +243,6 @@ func ResetGlobalMap(prefixKeyLock, prefixKey string) (err error) {
 	}
 
 	setResetKey(cli, "0")
-
-	fmt.Println("[Reset] released lock for reset ", prefixKeyLock)
-	fmt.Println()
 
 	return nil
 }

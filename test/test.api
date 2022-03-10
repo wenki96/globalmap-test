@@ -16,6 +16,10 @@ type ResponseSendTx {
 	Num int `json:"num"`
 }
 
+type RequestReset struct {}
+
+type ResponseReset {}
+
 service test-api {
 	@handler TestConstUserHandler
 	get /api/test/getnum1(RequestConstUser) returns (ResponseConstUser)
@@ -25,4 +29,7 @@ service test-api {
 	
 	@handler TestSendTxHandler
 	get /api/test/sendtx(RequestSendTx) returns (ResponseSendTx)
+	
+	@handler TestResetHandler
+	get /api/test/reset(RequestReset) returns (ResponseReset)
 }

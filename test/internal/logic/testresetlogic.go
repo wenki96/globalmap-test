@@ -2,6 +2,7 @@ package logic
 
 import (
 	"context"
+	"time"
 
 	"main/etcd"
 	"main/test/internal/svc"
@@ -25,10 +26,14 @@ func NewTestResetLogic(ctx context.Context, svcCtx *svc.ServiceContext) TestRese
 }
 
 func (l *TestResetLogic) TestReset(req types.RequestReset) (resp *types.ResponseReset, err error) {
-	err = etcd.ResetGlobalMap()
-	if err != nil {
-		logx.Error("what the fuck")
+	for true {
+		err = etcd.ResetGlobalMap()
+		if err != nil {
+			logx.Error("what the fuck")
+		}
+		time.Sleep(2 * time.Second)
 	}
+
 
 	return
 }

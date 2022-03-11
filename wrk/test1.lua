@@ -37,12 +37,15 @@ end
 
 function done(summary, latency, requests)
 -- 循环线程 table
+   local global_responses = 0
    for index, thread in ipairs(threads) do
       local id        = thread:get("id")
       local requests  = thread:get("requests")
       local responses = thread:get("responses")
       local msg = "thread %d made %d requests and got %d responses"
+      global_responses = global_responses + responses
 -- 打印每个线程发起了多少个请求，得到了多少次响应
       print(msg:format(id, requests, responses))
    end
+   print(global_responses)
 end

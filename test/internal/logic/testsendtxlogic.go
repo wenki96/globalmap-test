@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log"
 	"time"
+	"strconv"
+	"fmt"
 
 	"main/etcd"
 	"main/test/internal/svc"
@@ -57,15 +59,50 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 	keyLock := etcd.PrefixResetLock + uuid
 	mtx := concurrency.NewMutex(s, keyLock)
 
+	start1 := time.Now()
+
 	// acquire lock
 	if err := mtx.Lock(ctx); err != nil {
 		errInfo := err.Error()
 		logx.Error(errInfo)
 		return &types.ResponseSendTx{}, err
 	}
-	defer mtx.Unlock(ctx)
+	
+	lockArray := make([]*concurrency.Mutex, 0)
 
-	time.Sleep(200 * time.Millisecond)
+	var Users []string
+	nums := generateRandomNumber(1, 200000, 3)
+	for _, n := range nums {
+		Users = append(Users, strconv.Itoa(n))
+		// fmt.Println(n)
+	}
+	//Users := []string{"1", "2", "3"}
+
+	for i := 0; i < 3; i++ {
+		keyLock := etcd.PrefixMapLock + Users[i]
+		lockAsset := concurrency.NewMutex(s, keyLock)
+		if err := lockAsset.TryLock(ctx); err != nil {
+			for _, lock := range lockArray {
+				lock.Unlock(ctx)
+			}
+			logx.Error("refused by lock")
+			return &types.ResponseSendTx{}, err
+		}
+		lockArray = append([]*concurrency.Mutex{lockAsset}, lockArray...)
+	}
+
+	// time.Sleep(400 * time.Millisecond)
+
+	for _, lock := range lockArray {
+		lock.Unlock(ctx)
+	}
+
+	mtx.Unlock(ctx)
+
+	end1 := time.Since(start1)
+	fmt.Printf("sendtx time %v\n", end1)
+
+	// time.Sleep(200 * time.Millisecond)
 
 	return &types.ResponseSendTx{
 		Num: 100,

@@ -8,6 +8,7 @@ import (
 	"main/test/internal/handler"
 	"main/test/internal/svc"
 
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
 )
@@ -18,7 +19,15 @@ func main() {
 	flag.Parse()
 
 	var c config.Config
+
+	c.RestConf.Timeout = 10000
+
 	conf.MustLoad(*configFile, &c)
+
+	var logc logx.LogConf
+	logc.Path = "~/root/log.txt"
+	logx.MustSetup(logc)
+	logx.SetLevel(2)
 
 	ctx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)

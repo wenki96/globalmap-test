@@ -3,19 +3,18 @@ package logic
 import (
 	"context"
 	"errors"
-	"log"
-	"time"
-	"strconv"
 	"fmt"
+	"strconv"
+	"time"
 
 	"main/etcd"
 	"main/test/internal/svc"
 	"main/test/internal/types"
 
 	"github.com/google/uuid"
-	"github.com/zeromicro/go-zero/core/logx"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type TestSendTxLogic struct {
@@ -32,23 +31,35 @@ func NewTestSendTxLogic(ctx context.Context, svcCtx *svc.ServiceContext) TestSen
 	}
 }
 
+// //获取redis连接池
+// func newPool() *redis.Pool {
+// 	return &redis.Pool{
+// 		MaxIdle:     3,
+// 		IdleTimeout: time.Duration(24) * time.Second,
+// 		Dial: func() (redis.Conn, error) {
+// 			c, err := redis.Dial("tcp", "localhost:6379")
+// 			if err != nil {
+// 				panic(err.Error())
+// 				return nil, err
+// 			}
+// 			return c, err
+// 		},
+// 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+// 			_, err := c.Do("PING")
+// 			if err != nil {
+// 				return err
+// 			}
+// 			return err
+// 		},
+// 	}
+// }
+
 func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.ResponseSendTx, err error) {
-	// init distributed lock in etcd
-	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"127.0.0.1:2379"}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cli.Close()
-	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
-	if err != nil {
-		errInfo := err.Error()
-		logx.Error(errInfo)
-		return &types.ResponseSendTx{}, err
-	}
-	defer s.Close()
+	start1 := time.Now()
+
 	ctx := context.Background()
 
-	if etcd.ResetKeyUsed(cli) {
+	if etcd.G_etcd.ResetKeyUsed() {
 		errInfo := "[sendtx] Globalmap is resetting"
 		logx.Error(errInfo)
 		return &types.ResponseSendTx{}, errors.New(errInfo)
@@ -57,9 +68,34 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 	uuid := uuid.NewString()
 
 	keyLock := etcd.PrefixResetLock + uuid
-	mtx := concurrency.NewMutex(s, keyLock)
+	mtx := concurrency.NewMutex(etcd.G_etcd.S, keyLock)
 
-	start1 := time.Now()
+	// pool := newPool() // or, pool := redigo.NewPool(...)
+
+	// rs := redsync.New([]redsync.Pool{pool})
+
+	// // Create an instance of redisync to be used to obtain a mutual exclusion
+	// // lock.
+
+	// mutexname := "my-global-mutex"
+	// mutex := rs.NewMutex(mutexname)
+
+	// if err := mutex.Lock(); err != nil {
+	// 	panic(err)
+	// }
+	// if ok, err := mutex.Unlock(); !ok || err != nil {
+	// 	panic("unlock failed")
+	// }
+
+	// var putResp *clientv3.PutResponse
+	// // 实例化一个用于操作ETCD的KV
+	// kv := clientv3.NewKV(cli)
+
+	// _, err = kv.Put(ctx, "/test/", "1")
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return &types.ResponseSendTx{}, errors.New(err.Error())
+	// }
 
 	// acquire lock
 	if err := mtx.Lock(ctx); err != nil {
@@ -67,7 +103,7 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 		logx.Error(errInfo)
 		return &types.ResponseSendTx{}, err
 	}
-	
+
 	lockArray := make([]*concurrency.Mutex, 0)
 
 	var Users []string
@@ -80,7 +116,7 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 
 	for i := 0; i < 3; i++ {
 		keyLock := etcd.PrefixMapLock + Users[i]
-		lockAsset := concurrency.NewMutex(s, keyLock)
+		lockAsset := concurrency.NewMutex(etcd.G_etcd.S, keyLock)
 		if err := lockAsset.TryLock(ctx); err != nil {
 			for _, lock := range lockArray {
 				lock.Unlock(ctx)
@@ -91,13 +127,15 @@ func (l *TestSendTxLogic) TestSendTx(req types.RequestSendTx) (resp *types.Respo
 		lockArray = append([]*concurrency.Mutex{lockAsset}, lockArray...)
 	}
 
-	// time.Sleep(400 * time.Millisecond)
-
 	for _, lock := range lockArray {
 		lock.Unlock(ctx)
 	}
 
 	mtx.Unlock(ctx)
+
+	// if ok, err := mutex.Unlock(); !ok || err != nil {
+	// 	panic("unlock failed")
+	// }
 
 	end1 := time.Since(start1)
 	fmt.Printf("sendtx time %v\n", end1)

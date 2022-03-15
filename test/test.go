@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 
+	"main/etcd"
 	"main/test/internal/config"
 	"main/test/internal/handler"
 	"main/test/internal/svc"
 
-	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/conf"
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
 )
 
@@ -28,6 +29,8 @@ func main() {
 	logc.Path = "~/root/log.txt"
 	logx.MustSetup(logc)
 	logx.SetLevel(2)
+
+	etcd.InitEtcd()
 
 	ctx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)

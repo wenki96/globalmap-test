@@ -3,19 +3,56 @@ package etcd
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
-func ResetKeyUsed(cli *clientv3.Client) bool {
-	var getResp *clientv3.GetResponse
-	// 实例化一个用于操作ETCD的KV
-	kv := clientv3.NewKV(cli)
+type Etcd struct {
+	client *clientv3.Client
+	kv     clientv3.KV
+	lease  clientv3.Lease
+	S      *concurrency.Session
+}
 
-	getResp, err := kv.Get(context.TODO(), PrefixLock)
+// 全局单例
+var (
+	G_etcd *Etcd
+)
+
+// 初始化
+func InitEtcd() (err error) {
+	// 初始化配置
+	config := clientv3.Config{
+		Endpoints:   []string{"localhost:2379"},          // 集群地址
+		DialTimeout: time.Duration(5) * time.Millisecond, // 连接超时
+	}
+
+	// 建立连接
+	client, err := clientv3.New(config)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// 得到KV和Lease的API子集
+	kv := clientv3.NewKV(client)
+	lease := clientv3.NewLease(client)
+
+	session, err := concurrency.NewSession(client, concurrency.WithTTL(10))
+
+	// 赋值单例
+	G_etcd = &Etcd{
+		client: client,
+		kv:     kv,
+		lease:  lease,
+		S:      session,
+	}
+	return
+}
+
+func (etcd *Etcd) ResetKeyUsed() bool {
+	getResp, err := etcd.kv.Get(context.TODO(), PrefixLock)
 	if err != nil {
 		fmt.Println(err)
 		return true
@@ -30,25 +67,10 @@ func ResetKeyUsed(cli *clientv3.Client) bool {
 	return false
 }
 
-func GetGlobalMap(key string) (value string, err error) {
-	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cli.Close()
-
-	// create a sessions to aqcuire a lock
-	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
-	if err != nil {
-		return "", err
-	}
-	defer s.Close()
-
+func (etcd *Etcd) GetGlobalMap(key string) (value string, err error) {
 	var getResp *clientv3.GetResponse
-	// 实例化一个用于操作ETCD的KV
-	kv := clientv3.NewKV(cli)
 
-	if getResp, err = kv.Get(context.TODO(), key); err != nil {
+	if getResp, err = etcd.kv.Get(context.TODO(), key); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -60,25 +82,10 @@ func GetGlobalMap(key string) (value string, err error) {
 	return string(getResp.Kvs[0].Value), nil
 }
 
-func UpdateGlobalMap(key, value string) (err error) {
-	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cli.Close()
-
-	// create a sessions to aqcuire a lock
-	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
+func (etcd *Etcd) UpdateGlobalMap(key, value string) (err error) {
 	var putResp *clientv3.PutResponse
-	// 实例化一个用于操作ETCD的KV
-	kv := clientv3.NewKV(cli)
 
-	if putResp, err = kv.Put(context.TODO(), key, value, clientv3.WithPrevKV()); err != nil {
+	if putResp, err = etcd.kv.Put(context.TODO(), key, value, clientv3.WithPrevKV()); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -92,24 +99,8 @@ func UpdateGlobalMap(key, value string) (err error) {
 	return nil
 }
 
-func DeleteGlobalMap(key string) (err error) {
-	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cli.Close()
-
-	// create a sessions to aqcuire a lock
-	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
-	// 实例化一个用于操作ETCD的KV
-	kv := clientv3.NewKV(cli)
-
-	res, err := kv.Delete(context.TODO(), key)
+func (etcd *Etcd) DeleteGlobalMap(key string) (err error) {
+	res, err := etcd.kv.Delete(context.TODO(), key)
 	if err != nil {
 		return err
 	} else {
@@ -122,36 +113,24 @@ func DeleteGlobalMap(key string) (err error) {
 	return nil
 }
 
-func setResetKey(cli *clientv3.Client, key string) {
-	kv := clientv3.NewKV(cli)
-	if _, err := kv.Put(context.TODO(), PrefixLock, key, clientv3.WithPrevKV()); err != nil {
+func (etcd *Etcd) setResetKey(key string) {
+	if _, err := etcd.kv.Put(context.TODO(), PrefixLock, key); err != nil {
 		fmt.Println(err)
 		return
 	}
 }
 
-func ResetGlobalMap() (err error) {
-	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cli.Close()
-	s, err := concurrency.NewSession(cli, concurrency.WithTTL(10))
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
+func (etcd *Etcd) ResetGlobalMap() (err error) {
 	ctx := context.Background()
 
 	lockArray := make([]*concurrency.Mutex, 0)
 
 	// acquire lock (or wait to have it)
-	setResetKey(cli, "1")
+	etcd.setResetKey("1")
 
 	start1 := time.Now()
 
-	gresp, err := cli.Get(ctx, PrefixResetLock, clientv3.WithPrefix())
+	gresp, err := etcd.kv.Get(ctx, PrefixResetLock, clientv3.WithPrefix())
 	if err != nil {
 		return err
 	} else {
@@ -162,7 +141,7 @@ func ResetGlobalMap() (err error) {
 		for _, kv := range gresp.Kvs {
 			startget := time.Now()
 
-			keys, _ := cli.Get(ctx, string(kv.Key))
+			keys, _ := etcd.kv.Get(ctx, string(kv.Key))
 
 			endget := time.Since(startget)
 			fmt.Printf("get time %v\n", endget)
@@ -171,7 +150,7 @@ func ResetGlobalMap() (err error) {
 				continue
 			} else {
 				cnt++
-				mtx := concurrency.NewMutex(s, string(kv.Key))
+				mtx := concurrency.NewMutex(etcd.S, string(kv.Key))
 
 				// acquire lock
 				if err := mtx.Lock(ctx); err != nil {
@@ -183,14 +162,13 @@ func ResetGlobalMap() (err error) {
 
 		}
 
-		// fmt.Printf("lock nums %d\n", cnt)
+		fmt.Printf("lock nums %d\n", cnt)
 	}
 
 	end1 := time.Since(start1)
 	fmt.Printf("lock time %v\n", end1)
 
-	kv := clientv3.NewKV(cli)
-	res, err := kv.Delete(context.TODO(), PrefixKey, clientv3.WithPrevKV(), clientv3.WithPrefix())
+	res, err := etcd.kv.Delete(context.TODO(), PrefixKey, clientv3.WithPrevKV(), clientv3.WithPrefix())
 	if err != nil {
 		return err
 	} else {
@@ -216,7 +194,7 @@ func ResetGlobalMap() (err error) {
 
 	time.Sleep(1 * time.Second)
 
-	setResetKey(cli, "0")
+	etcd.setResetKey("0")
 
 	return nil
 }
